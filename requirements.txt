@@ -1,0 +1,20 @@
+# MoleculeQ - core scientific + quantum stack
+# Pinned to Qiskit 1.x ecosystem for Python 3.11 compatibility
+qiskit>=1.0,<2.0
+qiskit-aer>=0.15
+qiskit-nature>=1.0,<2.0
+qiskit-algorithms>=0.3
+pyscf>=2.4
+
+# Numerical / scientific
+numpy<2.0
+
+# Visualization
+matplotlib
+plotly
+
+# Frontend
+streamlit
+
+# Testing
+pytest

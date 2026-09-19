@@ -1,0 +1,27 @@
+# MoleculeQ — Streamlit theme configuration
+# A dark, scientific visual identity: near-black navy canvas with a
+# warm "hydrogen-orange" accent drawn from the app's electron-cloud color.
+
+[theme]
+primaryColor = "#ffb84d"
+backgroundColor = "#0a0e17"
+secondaryBackgroundColor = "#121826"
+textColor = "#e8ebf2"
+
+# Sans-serif for a modern lab-tool feel (vs. Streamlit's serif default).
+font = "sans serif"
+
+[server]
+# Friendly defaults for a student laptop / expo machine.
+headless = true
+port = 8501
+address = "localhost"
+runOnSave = true
+
+# Never phone home from an educational environment.
+[browser]
+gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"
+showSidebarNavigation = false

@@ -3,7 +3,7 @@ qiskit-aer==0.17.2
 qiskit-nature==0.8.0
 qiskit-algorithms==0.4.0
 pyscf>=2.4
-numpy<2.0
+numpy>=2,<3
 matplotlib
 plotly
 streamlit

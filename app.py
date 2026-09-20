@@ -22,8 +22,12 @@ warnings.filterwarnings("ignore")  # quiet benign scipy/qiskit warnings
 from src.molecule_builder import (
     MAX_BOND_ANGSTROM,
     MIN_BOND_ANGSTROM,
+    HEH_MIN_BOND_ANGSTROM, HEH_MAX_BOND_ANGSTROM,
+    LIH_MIN_BOND_ANGSTROM, LIH_MAX_BOND_ANGSTROM,
+    BEH2_MIN_BOND_ANGSTROM, BEH2_MAX_BOND_ANGSTROM,
     MoleculeBuilderError,
     build_hydrogen,
+    build_molecule,
 )
 from src.hamiltonian import build_qubit_operator
 from src.quantum_solver import run_vqe
@@ -46,6 +50,9 @@ st.set_page_config(
 
 MOLECULES = {
     "Hydrogen (H₂)": "H2",
+    "Helium Hydride Cation (HeH⁺)": "HeH+",
+    "Lithium Hydride (LiH)": "LiH",
+    "Beryllium Dihydride (BeH₂)": "BeH2",
 }
 
 PAGES = ["🏠 Home", "🧪 Simulate", "📊 Results", "🎓 Learn"]
@@ -71,6 +78,7 @@ def _safe(fn):
 
 @st.cache_data(show_spinner=False)
 def cached_pipeline(
+    molecule_key: str,
     bond_angstrom: float,
     ansatz: str,
     optimizer: str,
@@ -80,14 +88,18 @@ def cached_pipeline(
 ) -> dict | None:
     """Run the full single-geometry pipeline; returns a serializable dict."""
     return _run_pipeline(
-        bond_angstrom, ansatz, optimizer, maxiter, backend, mapping
+        molecule_key, bond_angstrom, ansatz, optimizer, maxiter, backend, mapping
     )
 
 
-def _run_pipeline(bond, ansatz, optimizer, maxiter, backend, mapping):
-    geom = build_hydrogen(bond)
+def _run_pipeline(molecule_key, bond, ansatz, optimizer, maxiter, backend, mapping):
+    geom = build_molecule(molecule_key, bond)
     prob = build_qubit_operator(geom, mapping=mapping)
     qm = None
+    n_spatial = 2
+    if geom.name == "BeH2":
+        n_spatial = 3
+
     if ansatz == "uccsd":
         from qiskit_nature.second_q.mappers import ParityMapper
 
@@ -101,7 +113,7 @@ def _run_pipeline(bond, ansatz, optimizer, maxiter, backend, mapping):
         maxiter=maxiter,
         backend=backend,
         qubit_mapper=qm,
-        num_spatial_orbitals=2 if ansatz == "uccsd" else None,
+        num_spatial_orbitals=n_spatial if ansatz == "uccsd" else None,
     )
     from src.classical_reference import build_reference
 
@@ -111,17 +123,17 @@ def _run_pipeline(bond, ansatz, optimizer, maxiter, backend, mapping):
         "prob": prob,
         "vqe": vqe,
         "ref": ref,
-        "ansatz_circuit": _make_bound_circuit(prob, vqe, ansatz, qm),
+        "ansatz_circuit": _make_bound_circuit(prob, vqe, ansatz, qm, n_spatial),
     }
 
 
-def _make_bound_circuit(prob, vqe, ansatz, qubit_mapper):
+def _make_bound_circuit(prob, vqe, ansatz, qubit_mapper, n_spatial=2):
     """Ansatz with its optimal parameters bound in (for display)."""
     from src.quantum_solver import make_ansatz
 
     ans = make_ansatz(
         prob.num_qubits,
-        num_spatial_orbitals=2 if ansatz == "uccsd" else None,
+        num_spatial_orbitals=n_spatial if ansatz == "uccsd" else None,
         num_particles=prob.num_particles,
         qubit_mapper=qubit_mapper,
         ansatz=ansatz,
@@ -145,13 +157,24 @@ def render_sidebar() -> dict:
         st.markdown("---")
         st.markdown("### Molecule")
         molecule = st.selectbox("Species", list(MOLECULES.keys()))
+        mol_key = MOLECULES[molecule]
+
+        if mol_key == "H2":
+            min_b, max_b, val_b = MIN_BOND_ANGSTROM, MAX_BOND_ANGSTROM, 0.735
+        elif mol_key == "HeH+":
+            min_b, max_b, val_b = HEH_MIN_BOND_ANGSTROM, HEH_MAX_BOND_ANGSTROM, 0.772
+        elif mol_key == "LiH":
+            min_b, max_b, val_b = LIH_MIN_BOND_ANGSTROM, LIH_MAX_BOND_ANGSTROM, 1.595
+        else:
+            min_b, max_b, val_b = BEH2_MIN_BOND_ANGSTROM, BEH2_MAX_BOND_ANGSTROM, 1.326
+
         bond_angstrom = st.slider(
             "Bond distance (Å)",
-            min_value=MIN_BOND_ANGSTROM,
-            max_value=MAX_BOND_ANGSTROM,
-            value=0.735,
+            min_value=min_b,
+            max_value=max_b,
+            value=val_b,
             step=0.005,
-            help="Distance between the two hydrogen nuclei. Changing this "
+            help=f"Relevant bond length for {molecule}. Changing this "
             "rebuilds the molecular Hamiltonian and re-runs the algorithm.",
         )
 
@@ -238,7 +261,7 @@ simulated honestly on a statevector simulator.
         )
 
     with col_r:
-        geom = build_hydrogen(settings["bond"])
+        geom = build_molecule(settings["molecule_key"], settings["bond"])
         from src.visualization import plot_molecule
 
         fig = plot_molecule(geom, energy_text=f"{settings['bond']:.3f} Å")
@@ -250,15 +273,15 @@ simulated honestly on a statevector simulator.
 
     st.markdown("---")
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Molecule", "H₂", "2 electrons")
+    c1.metric("Molecule", settings["molecule_key"], f"{geom.num_atoms} atom(s)")
     c2.metric("Basis set", "STO-3G", "minimal basis")
     c3.metric("Algorithm", "VQE", "hybrid quantum-classical")
-    c4.metric("Qubits", "2", "after parity mapping")
+    c4.metric("Charge", f"{geom.charge}", f"multiplicity {geom.multiplicity}")
 
     st.markdown(
         """
 ### How to use
-1. Use the **sidebar** to set the bond distance and the algorithm options.
+1. Use the **sidebar** to select a molecule, set the bond distance and algorithm options.
 2. Press **▶ Run simulation** to run VQE on the current geometry.
 3. Open the **Simulate** and **Results** pages to see the circuit, the
    convergence and the comparison with classical references.
@@ -275,7 +298,7 @@ def page_simulate(settings):
 
     st.sidebar.markdown("---")
     st.sidebar.markdown(
-        f"**Next run settings:** bond={settings['bond']:.3f} Å · "
+        f"**Next run settings:** {settings['molecule_key']} · bond={settings['bond']:.3f} Å · "
         f"{settings['ansatz']} · {settings['optimizer']} · {settings['maxiter']} iters"
     )
 
@@ -283,6 +306,7 @@ def page_simulate(settings):
         with st.spinner("Running VQE on the quantum simulator…"):
             result = _safe(
                 lambda: cached_pipeline(
+                    settings["molecule_key"],
                     settings["bond"],
                     settings["ansatz"],
                     settings["optimizer"],
@@ -308,20 +332,20 @@ def page_simulate(settings):
         )
         return
 
-    changed = abs(result["geom"].bond_distance - bond_now) > 1e-9
+    changed = abs(result["geom"].bond_distance - bond_now) > 1e-9 or result["geom"].name != settings["molecule_key"]
     if changed:
         st.warning(
-            f"You moved the bond to {bond_now:.3f} Å but the last run was at "
-            f"{result['geom'].bond_distance:.3f} Å. Press ▶ Run to re-solve."
+            f"You selected {settings['molecule_key']} at {bond_now:.3f} Å but the last run was for "
+            f"{result['geom'].name} at {result['geom'].bond_distance:.3f} Å. Press ▶ Run to re-solve."
         )
 
     geom, prob, vqe, ref = result["geom"], result["prob"], result["vqe"], result["ref"]
 
     st.write("### Molecular geometry")
     c = st.columns(3)
-    c[0].metric("Bond length", f"{geom.bond_distance:.3f} Å")
-    c[1].metric("Charge / spin", f"{geom.charge} / {geom.multiplicity}")
-    c[2].metric("Chemistry backend", prob.chemistry_backend)
+    c[0].metric("Species", geom.name)
+    c[1].metric("Bond length", f"{geom.bond_distance:.3f} Å")
+    c[2].metric("Charge / spin", f"{geom.charge} / {geom.multiplicity}")
 
     st.write("### Qubit Hamiltonian")
     c = st.columns(2)
@@ -405,7 +429,7 @@ def page_results(settings):
         "> **What this does and does not prove.** The VQE estimate matches the "
         "classical exact eigenvalue of the qubit Hamiltonian — validating the "
         "pipeline and the algorithm. It does **not** show quantum advantage: "
-        "for 2 qubits a laptop diagonalizes the operator instantly. The "
+        "for small qubit systems a laptop diagonalizes the operator instantly. The "
         "comparison is a *benchmark of the quantum optimisation*, not a race."
     )
 
@@ -421,22 +445,32 @@ def page_results(settings):
             "Each point is computed by the real simulation pipeline — chemistry "
             "integrals → qubit Hamiltonian → VQE — from scratch."
         )
+        mol_key = settings["molecule_key"]
+        if mol_key == "H2":
+            s_min, s_max, d_min, d_max = MIN_BOND_ANGSTROM, MAX_BOND_ANGSTROM, 0.6, 3.5
+        elif mol_key == "HeH+":
+            s_min, s_max, d_min, d_max = HEH_MIN_BOND_ANGSTROM, HEH_MAX_BOND_ANGSTROM, 0.5, 2.5
+        elif mol_key == "LiH":
+            s_min, s_max, d_min, d_max = LIH_MIN_BOND_ANGSTROM, LIH_MAX_BOND_ANGSTROM, 1.0, 3.5
+        else:
+            s_min, s_max, d_min, d_max = BEH2_MIN_BOND_ANGSTROM, BEH2_MAX_BOND_ANGSTROM, 0.9, 3.0
+
         left, right, npts = st.columns([1, 1, 1])
-        r_min = left.slider("Scan min (Å)", MIN_BOND_ANGSTROM, 2.0, 0.6, 0.05)
-        r_max = right.slider("Scan max (Å)", 1.0, MAX_BOND_ANGSTROM, 3.5, 0.05)
+        r_min = left.slider("Scan min (Å)", s_min, 2.0, d_min, 0.05)
+        r_max = right.slider("Scan max (Å)", 1.0, s_max, d_max, 0.05)
         n = npts.slider("Points", 5, 30, 15)
 
         try:
-            a = validate_scan_window(r_min, r_max, n)
+            a = validate_scan_window(r_min, r_max, n, molecule_name=mol_key)
         except ValueError as exc:
             st.error(str(exc))
             st.stop()
 
         scan = st.session_state.get("scan")
-        scan_key = f"{a[0]:.3f}-{a[1]:.3f}-{a[2]}"
+        scan_key = f"{mol_key}-{a[0]:.3f}-{a[1]:.3f}-{a[2]}"
         if scan is None or st.session_state.get("scan_key") != scan_key:
-            progress = st.progress(0.0, text="Scanning bond distances…")
-            scan = _run_scan_safely(a[0], a[1], a[2], progress)
+            progress = st.progress(0.0, text=f"Scanning {mol_key} bond distances…")
+            scan = _run_scan_safely(a[0], a[1], a[2], progress, molecule_name=mol_key)
             if scan is not None:
                 st.session_state["scan"] = scan
                 st.session_state["scan_key"] = scan_key
@@ -462,12 +496,11 @@ def page_results(settings):
             st.markdown(
                 "The **minimum** is the equilibrium bond length *of this STO-3G "
                 "model* (a slightly different value from high-accuracy coupled-cluster "
-                "or experimental curves). Near dissociation the curve approaches two "
-                "separate hydrogen atoms."
+                "or experimental curves)."
             )
 
 
-def _run_scan_safely(r_min, r_max, n, progress):
+def _run_scan_safely(r_min, r_max, n, progress, molecule_name="H2"):
     from src.energy_scan import run_scan
 
     try:
@@ -475,6 +508,7 @@ def _run_scan_safely(r_min, r_max, n, progress):
             r_min,
             r_max,
             n,
+            molecule_name=molecule_name,
             progress_callback=lambda done, total: progress.progress(done / total),
         )
         progress.empty()

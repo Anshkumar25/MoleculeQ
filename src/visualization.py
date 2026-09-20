@@ -34,12 +34,7 @@ def _safe_import_qiskit_draw():
 # Molecule diagram
 # ---------------------------------------------------------------------------
 def plot_molecule(geometry, energy_text: str | None = None, ax=None):
-    """Draw a clean 2D H2 diagram that reflects the current bond distance.
-
-    The nuclei are drawn to scale (compact circles), the internuclear axis,
-    the bond and its measured length are all computed from the actual
-    geometry — the picture is never a static image.
-    """
+    """Draw a 2D molecular diagram that reflects the current geometry and bond distance."""
     import matplotlib.pyplot as plt
     from matplotlib.patches import Circle
 
@@ -48,42 +43,100 @@ def plot_molecule(geometry, energy_text: str | None = None, ax=None):
     else:
         fig = ax.figure
 
-    (x1, y1, z1), (x2, y2, z2) = geometry.coords[0], geometry.coords[1]
-    R = float(np.hypot(z1 - z2, y1 - y2))
+    color_map = {
+        "H": "#1f7abf",
+        "He": "#9c27b0",
+        "Li": "#e65100",
+        "Be": "#43a047",
+    }
+    edge_map = {
+        "H": "#0e4a7a",
+        "He": "#6a1b9a",
+        "Li": "#b71c1c",
+        "Be": "#1b5e20",
+    }
 
-    # z-axis horizontal display
-    ax.add_patch(Circle((z1, 0), 0.22, color="#1f7abf", ec="#0e4a7a", lw=2, zorder=3))
-    ax.add_patch(Circle((z2, 0), 0.22, color="#1f7abf", ec="#0e4a7a", lw=2, zorder=3))
+    if geometry.num_atoms == 2:
+        (x1, y1, z1), (x2, y2, z2) = geometry.coords[0], geometry.coords[1]
+        sym1, sym2 = geometry.symbols[0], geometry.symbols[1]
 
-    # bond
-    ax.plot([z1, z2], [0, 0], color="#888", lw=3, zorder=1)
+        c1 = color_map.get(sym1, "#1f7abf")
+        e1 = edge_map.get(sym1, "#0e4a7a")
+        c2 = color_map.get(sym2, "#1f7abf")
+        e2 = edge_map.get(sym2, "#0e4a7a")
 
-    # electron density hints (clouds above/below bond)
-    for zc in np.linspace(z1, z2, 9):
+        r1 = 0.28 if sym1 in ("Li", "Be") else (0.24 if sym1 == "He" else 0.22)
+        r2 = 0.22
+
+        ax.add_patch(Circle((z1, 0), r1, color=c1, ec=e1, lw=2, zorder=3))
+        ax.add_patch(Circle((z2, 0), r2, color=c2, ec=e2, lw=2, zorder=3))
+
+        # bond
+        ax.plot([z1, z2], [0, 0], color="#888", lw=3, zorder=1)
+
+        # electron density hints
+        for zc in np.linspace(z1, z2, 9):
+            ax.add_patch(Circle((zc, 0.34), 0.09, color="#ffb84d", alpha=0.5, zorder=2))
+            ax.add_patch(Circle((zc, -0.34), 0.09, color="#ffb84d", alpha=0.5, zorder=2))
+
+        ax.set_xlim(min(z1, z2) - 0.8, max(z1, z2) + 0.8)
+        ax.set_ylim(-0.8, 0.8)
+        ax.set_aspect("equal")
+        ax.axis("off")
+
+        mid = (z1 + z2) / 2
+        ax.annotate(
+            "",
+            xy=(z1, -0.55),
+            xytext=(z2, -0.55),
+            arrowprops=dict(arrowstyle="<->", lw=1.2, color="#333"),
+        )
+        ax.text(mid, -0.72, f"{geometry.bond_distance:.3f} Å", ha="center", fontsize=11)
+
+        if energy_text:
+            ax.text(mid, 0.42, energy_text, ha="center", fontsize=10, color="#1b5e20")
+
+        ax.text(z1, 0.0, sym1, ha="center", va="center", color="white", fontsize=10, fontweight="bold", zorder=4)
+        ax.text(z2, 0.0, sym2, ha="center", va="center", color="white", fontsize=10, fontweight="bold", zorder=4)
+        return fig
+
+    # 3-atom linear arrangement: BeH2 (H - Be - H)
+    z_be = geometry.coords[0][2]
+    z_h1 = geometry.coords[1][2]
+    z_h2 = geometry.coords[2][2]
+
+    c_be, e_be = color_map["Be"], edge_map["Be"]
+    c_h, e_h = color_map["H"], edge_map["H"]
+
+    ax.add_patch(Circle((z_be, 0), 0.28, color=c_be, ec=e_be, lw=2, zorder=3))
+    ax.add_patch(Circle((z_h1, 0), 0.22, color=c_h, ec=e_h, lw=2, zorder=3))
+    ax.add_patch(Circle((z_h2, 0), 0.22, color=c_h, ec=e_h, lw=2, zorder=3))
+
+    ax.plot([z_h2, z_h1], [0, 0], color="#888", lw=3, zorder=1)
+
+    for zc in np.linspace(z_h2, z_h1, 15):
         ax.add_patch(Circle((zc, 0.34), 0.09, color="#ffb84d", alpha=0.5, zorder=2))
         ax.add_patch(Circle((zc, -0.34), 0.09, color="#ffb84d", alpha=0.5, zorder=2))
 
-    ax.set_xlim(min(z1, z2) - 0.8, max(z1, z2) + 0.8)
+    ax.set_xlim(min(z_h1, z_h2) - 0.8, max(z_h1, z_h2) + 0.8)
     ax.set_ylim(-0.8, 0.8)
     ax.set_aspect("equal")
     ax.axis("off")
 
-    # bond-length label
-    mid = (z1 + z2) / 2
     ax.annotate(
         "",
-        xy=(z1, -0.55),
-        xytext=(z2, -0.55),
+        xy=(z_be, -0.55),
+        xytext=(z_h1, -0.55),
         arrowprops=dict(arrowstyle="<->", lw=1.2, color="#333"),
     )
-    ax.text(mid, -0.72, f"{geometry.bond_distance:.3f} Å", ha="center", fontsize=11)
+    ax.text((z_be + z_h1) / 2, -0.72, f"R = {geometry.bond_distance:.3f} Å", ha="center", fontsize=11)
 
     if energy_text:
-        ax.text(mid, 0.42, energy_text, ha="center", fontsize=10, color="#1b5e20")
+        ax.text(z_be, 0.42, energy_text, ha="center", fontsize=10, color="#1b5e20")
 
-    # center each nucleus identifier
-    ax.text(z1, 0.0, "H", ha="center", va="center", color="white", fontsize=10, zorder=4)
-    ax.text(z2, 0.0, "H", ha="center", va="center", color="white", fontsize=10, zorder=4)
+    ax.text(z_be, 0.0, "Be", ha="center", va="center", color="white", fontsize=10, fontweight="bold", zorder=4)
+    ax.text(z_h1, 0.0, "H", ha="center", va="center", color="white", fontsize=10, fontweight="bold", zorder=4)
+    ax.text(z_h2, 0.0, "H", ha="center", va="center", color="white", fontsize=10, fontweight="bold", zorder=4)
     return fig
 
 

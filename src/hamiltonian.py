@@ -139,7 +139,7 @@ def build_qubit_operator(
     Parameters
     ----------
     geometry : MolecularGeometry
-        The H2 geometry (from :func:`moleculeq.molecule_builder.build_hydrogen`).
+        The molecular geometry.
     basis : str
         Currently only ``"sto3g"`` is supported (the minimal basis).
     mapping : str
@@ -152,10 +152,11 @@ def build_qubit_operator(
     if basis.lower() not in ("sto3g",):
         raise ValueError(
             f"Basis {basis!r} is not available. MoleculeQ uses STO-3G (minimal "
-            "basis) for the H2 demonstration."
+            "basis) for demonstration."
         )
+
     if geometry.name != "H2":
-        raise ValueError(f"Only H2 is supported, received {geometry.name!r}.")
+        return _build_qubit_operator_general(geometry, basis=basis, mapping=mapping, **kwargs)
 
     # Prefer a genuine PySCF-driven problem when the package is installed.
     if ACTIVE_CHEMISTRY_BACKEND == "pyscf":
@@ -167,6 +168,52 @@ def build_qubit_operator(
             logger.warning("PySCF path failed (%s); falling back to local integrals.", exc)
 
     return _build_qubit_operator_nature(geometry, basis=basis, mapping=mapping, **kwargs)
+
+
+def _build_qubit_operator_general(
+    geometry: MolecularGeometry, basis: str = "sto3g", mapping: str = "parity", **kwargs
+) -> QuibitProblem:
+    """Build qubit operator for non-H2 molecules using STO-3G general integrals and active space."""
+    from qiskit_nature.second_q.hamiltonians import ElectronicEnergy
+    from qiskit_nature.second_q.mappers import ParityMapper, JordanWignerMapper
+    from qiskit.quantum_info import SparsePauliOp
+    from .hartree_fock_general import solve_rhf_general, get_molecule_active_spaces, active_space_transformation
+
+    rhf = solve_rhf_general(geometry)
+    core_idx, active_idx, (n_alpha, n_beta) = get_molecule_active_spaces(geometry)
+    e_core, h1_act, g2_act_phys = active_space_transformation(rhf, core_idx, active_idx)
+
+    ee = ElectronicEnergy.from_raw_integrals(h1_a=h1_act, h2_aa=g2_act_phys, validate=False)
+    total_const_nuc = rhf["E_nuc"] + e_core
+    ee.nuclear_repulsion_energy = total_const_nuc
+    fermionic_op = ee.second_q_op()
+
+    if mapping.lower() == "parity":
+        mapper = ParityMapper(num_particles=(n_alpha, n_beta))
+    elif mapping.lower() == "jordan-wigner":
+        mapper = JordanWignerMapper()
+    else:
+        raise ValueError(f"Unsupported mapping: {mapping!r}")
+
+    qubit_op = mapper.map(fermionic_op)
+    try:
+        qubit_op = SparsePauliOp(qubit_op)
+    except Exception:
+        pass
+
+    return QuibitProblem(
+        qubit_op=qubit_op,
+        num_qubits=qubit_op.num_qubits,
+        fermionic_op=fermionic_op,
+        num_particles=(n_alpha, n_beta),
+        nuclear_repulsion_energy=total_const_nuc,
+        hf_reference_energy_elec=rhf["E_elec"] - e_core,
+        hf_reference_energy_total=rhf["E_total"],
+        basis=basis,
+        mapping=mapping,
+        chemistry_backend="local-sto3g-integrals",
+        geometry=geometry,
+    )
 
 
 def _build_qubit_operator_via_pyscf_driver(geometry, basis, mapping, **kwargs):

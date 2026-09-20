@@ -66,9 +66,26 @@ def fci_reference(geometry: MolecularGeometry) -> tuple[float, float, float]:
 
     Returns (E_fci_elec, E_hf_elec, E_nuc).
     """
-    rhf = solve_rhf(geometry)
-    e_fci = fci_electronic_energy(geometry, rhf=rhf)
-    return float(e_fci), float(rhf["E_elec"]), float(rhf["E_nuc"])
+    if geometry.name == "H2":
+        rhf = solve_rhf(geometry)
+        e_fci = fci_electronic_energy(geometry, rhf=rhf)
+        return float(e_fci), float(rhf["E_elec"]), float(rhf["E_nuc"])
+
+    from .hartree_fock_general import (
+        solve_rhf_general,
+        fci_electronic_energy_general,
+        get_molecule_active_spaces,
+        active_space_transformation,
+    )
+
+    rhf = solve_rhf_general(geometry)
+    e_fci_total_elec = fci_electronic_energy_general(geometry, rhf=rhf)
+    core_idx, active_idx, _ = get_molecule_active_spaces(geometry)
+    e_core, _, _ = active_space_transformation(rhf, core_idx, active_idx)
+    total_nuc = float(rhf["E_nuc"] + e_core)
+    active_fci_elec = float(e_fci_total_elec - e_core)
+    active_hf_elec = float(rhf["E_elec"] - e_core)
+    return active_fci_elec, active_hf_elec, total_nuc
 
 
 def build_reference(

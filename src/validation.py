@@ -12,6 +12,9 @@ from typing import Any
 from .molecule_builder import (
     MAX_BOND_ANGSTROM,
     MIN_BOND_ANGSTROM,
+    HEH_MIN_BOND_ANGSTROM, HEH_MAX_BOND_ANGSTROM,
+    LIH_MIN_BOND_ANGSTROM, LIH_MAX_BOND_ANGSTROM,
+    BEH2_MIN_BOND_ANGSTROM, BEH2_MAX_BOND_ANGSTROM,
     MoleculeBuilderError,
     validate_bond_distance,
 )
@@ -49,10 +52,23 @@ def validate_bond(value: Any) -> float:
     return validate_bond_distance(value)
 
 
-def validate_scan_window(r_min: Any, r_max: Any, n_points: Any) -> tuple[float, float, int]:
+def validate_bond_for_molecule(name: str, value: Any) -> float:
+    """Validate a bond distance for a specific molecule."""
+    mol = name.upper()
+    min_b, max_b = MIN_BOND_ANGSTROM, MAX_BOND_ANGSTROM
+    if mol in ("HEH+", "HEHPLUS", "HELIUM HYDRIDE CATION (HEH⁺)"):
+        min_b, max_b = HEH_MIN_BOND_ANGSTROM, HEH_MAX_BOND_ANGSTROM
+    elif mol in ("LIH", "LITHIUM HYDRIDE (LIH)"):
+        min_b, max_b = LIH_MIN_BOND_ANGSTROM, LIH_MAX_BOND_ANGSTROM
+    elif mol in ("BEH2", "BERYLLIUM DIHYDRIDE (BEH₂)"):
+        min_b, max_b = BEH2_MIN_BOND_ANGSTROM, BEH2_MAX_BOND_ANGSTROM
+    return validate_bond_distance(value, min_b, max_b)
+
+
+def validate_scan_window(r_min: Any, r_max: Any, n_points: Any, molecule_name: str = "H2") -> tuple[float, float, int]:
     """Validate a scan window; return (r_min, r_max, n_points)."""
-    a = validate_bond(r_min)
-    b = validate_bond(r_max)
+    a = validate_bond_for_molecule(molecule_name, r_min)
+    b = validate_bond_for_molecule(molecule_name, r_max)
     n = validate_opt_int("number of points", n_points, 3, 60)
     if b <= a:
         raise ValueError("The maximum bond distance must exceed the minimum.")
@@ -84,8 +100,16 @@ def validate_mapping(value: str) -> str:
     return validate_choice("mapping", value, VALID_MAPPINGS)
 
 
-def friendly_scan_bounds() -> str:
+def friendly_scan_bounds(molecule_name: str = "H2") -> str:
+    mol = molecule_name.upper()
+    min_b, max_b = MIN_BOND_ANGSTROM, MAX_BOND_ANGSTROM
+    if mol in ("HEH+", "HEHPLUS", "HELIUM HYDRIDE CATION (HEH⁺)"):
+        min_b, max_b = HEH_MIN_BOND_ANGSTROM, HEH_MAX_BOND_ANGSTROM
+    elif mol in ("LIH", "LITHIUM HYDRIDE (LIH)"):
+        min_b, max_b = LIH_MIN_BOND_ANGSTROM, LIH_MAX_BOND_ANGSTROM
+    elif mol in ("BEH2", "BERYLLIUM DIHYDRIDE (BEH₂)"):
+        min_b, max_b = BEH2_MIN_BOND_ANGSTROM, BEH2_MAX_BOND_ANGSTROM
     return (
-        f"Bond distances must lie in [{MIN_BOND_ANGSTROM:.2f}, {MAX_BOND_ANGSTROM:.2f}] Å "
+        f"Bond distances must lie in [{min_b:.2f}, {max_b:.2f}] Å "
         "(STO-3G basis validity range)."
     )

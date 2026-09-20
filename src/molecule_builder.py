@@ -26,7 +26,17 @@ BOHR_PER_ANGSTROM = 1.0 / ANGSTROM_PER_BOHR
 MIN_BOND_ANGSTROM = 0.25
 MAX_BOND_ANGSTROM = 4.00
 
-SUPPORTED_MOLECULES = ("H2",)
+# Bond distance ranges for new molecules (in angstrom)
+HEH_MIN_BOND_ANGSTROM = 0.30
+HEH_MAX_BOND_ANGSTROM = 3.00
+
+LIH_MIN_BOND_ANGSTROM = 0.80
+LIH_MAX_BOND_ANGSTROM = 4.00
+
+BEH2_MIN_BOND_ANGSTROM = 0.80
+BEH2_MAX_BOND_ANGSTROM = 3.50
+
+SUPPORTED_MOLECULES = ("H2", "HeH+", "LiH", "BeH2")
 
 
 class MoleculeBuilderError(ValueError):
@@ -39,13 +49,13 @@ class MolecularGeometry:
 
     Attributes
     ----------
-    name : str            (e.g. "H2")
+    name : str            (e.g. "H2", "HeH+", "LiH", "BeH2")
     symbols : tuple[str]  element symbols, one per atom, in order
     coords : tuple[tuple[float, float, float]]
                           Cartesian coordinates in angstrom
-    charge : int          total molecular charge (0 for H2)
-    multiplicity : int    2S+1 (1 for H2 singlet)
-    bond_distance : float H-H bond distance in angstrom
+    charge : int          total molecular charge (0 for neutral, +1 for HeH+)
+    multiplicity : int    2S+1 (1 for singlet)
+    bond_distance : float Relevant bond distance in angstrom
     """
 
     name: str
@@ -67,7 +77,7 @@ class MolecularGeometry:
         )
 
     def to_nuclei_z(self) -> tuple[float, float]:
-        """z-positions of the two hydrogens in angstrom (bond along z-axis)."""
+        """z-positions of the two nuclei in angstrom for diatomic molecules."""
         if self.num_atoms != 2:
             raise MoleculeBuilderError(
                 f"Expected 2 nuclei, got {self.num_atoms} for {self.name}"
@@ -75,8 +85,8 @@ class MolecularGeometry:
         return self.coords[0][2], self.coords[1][2]
 
 
-def validate_bond_distance(bond_angstrom: float) -> float:
-    """Validate a H-H bond distance (angstrom); return it unchanged.
+def validate_bond_distance(bond_angstrom: float, min_bond: float = MIN_BOND_ANGSTROM, max_bond: float = MAX_BOND_ANGSTROM) -> float:
+    """Validate a bond distance (angstrom); return it unchanged.
 
     Raises
     ------
@@ -93,17 +103,15 @@ def validate_bond_distance(bond_angstrom: float) -> float:
         raise MoleculeBuilderError(
             f"Bond distance must be positive and finite, got {bond!r}."
         )
-    if bond < MIN_BOND_ANGSTROM:
+    if bond < min_bond:
         raise MoleculeBuilderError(
             f"Bond distance {bond:.3f} Å is too small. "
-            f"STO-3G supports ≥ {MIN_BOND_ANGSTROM:.2f} Å "
-            "(smaller values make the basis linearly dependent)."
+            f"Supported range is ≥ {min_bond:.2f} Å."
         )
-    if bond > MAX_BOND_ANGSTROM:
+    if bond > max_bond:
         raise MoleculeBuilderError(
             f"Bond distance {bond:.3f} Å is too large. "
-            f"STO-3G supports ≤ {MAX_BOND_ANGSTROM:.2f} Å "
-            "(the near-dissociation RHF limit is unreliable beyond this)."
+            f"Supported range is ≤ {max_bond:.2f} Å."
         )
     return bond
 
@@ -128,7 +136,7 @@ def build_hydrogen(bond_angstrom: float) -> MolecularGeometry:
     -------
     MolecularGeometry
     """
-    bond = validate_bond_distance(bond_angstrom)
+    bond = validate_bond_distance(bond_angstrom, MIN_BOND_ANGSTROM, MAX_BOND_ANGSTROM)
     half = bond / 2.0
     return MolecularGeometry(
         name="H2",
@@ -138,3 +146,68 @@ def build_hydrogen(bond_angstrom: float) -> MolecularGeometry:
         multiplicity=1,  # singlet
         bond_distance=bond,
     )
+
+
+def build_heh_plus(bond_angstrom: float) -> MolecularGeometry:
+    """Build a HeH+ (helium hydride cation) molecule.
+
+    Helium nucleus placed at origin (0,0,0) and hydrogen nucleus at (0,0,R).
+    Charge = +1, Multiplicity = 1.
+    """
+    bond = validate_bond_distance(bond_angstrom, HEH_MIN_BOND_ANGSTROM, HEH_MAX_BOND_ANGSTROM)
+    return MolecularGeometry(
+        name="HeH+",
+        symbols=("He", "H"),
+        coords=((0.0, 0.0, 0.0), (0.0, 0.0, bond)),
+        charge=1,
+        multiplicity=1,
+        bond_distance=bond,
+    )
+
+
+def build_lih(bond_angstrom: float) -> MolecularGeometry:
+    """Build a LiH (lithium hydride) molecule.
+
+    Lithium nucleus placed at origin (0,0,0) and hydrogen nucleus at (0,0,R).
+    Charge = 0, Multiplicity = 1.
+    """
+    bond = validate_bond_distance(bond_angstrom, LIH_MIN_BOND_ANGSTROM, LIH_MAX_BOND_ANGSTROM)
+    return MolecularGeometry(
+        name="LiH",
+        symbols=("Li", "H"),
+        coords=((0.0, 0.0, 0.0), (0.0, 0.0, bond)),
+        charge=0,
+        multiplicity=1,
+        bond_distance=bond,
+    )
+
+
+def build_beh2(bond_angstrom: float) -> MolecularGeometry:
+    """Build a linear BeH2 (beryllium dihydride) molecule: H - Be - H.
+
+    Beryllium nucleus placed at origin (0,0,0), H1 at (0,0,R), H2 at (0,0,-R).
+    Charge = 0, Multiplicity = 1.
+    """
+    bond = validate_bond_distance(bond_angstrom, BEH2_MIN_BOND_ANGSTROM, BEH2_MAX_BOND_ANGSTROM)
+    return MolecularGeometry(
+        name="BeH2",
+        symbols=("Be", "H", "H"),
+        coords=((0.0, 0.0, 0.0), (0.0, 0.0, bond), (0.0, 0.0, -bond)),
+        charge=0,
+        multiplicity=1,
+        bond_distance=bond,
+    )
+
+
+def build_molecule(name: str, bond_angstrom: float) -> MolecularGeometry:
+    """Generic entry point for building any supported molecular geometry."""
+    key = name.upper()
+    if key in ("H2", "HYDROGEN", "HYDROGEN (H₂)"):
+        return build_hydrogen(bond_angstrom)
+    if key in ("HEH+", "HEHPLUS", "HELIUM HYDRIDE CATION (HEH⁺)"):
+        return build_heh_plus(bond_angstrom)
+    if key in ("LIH", "LITHIUM HYDRIDE (LIH)"):
+        return build_lih(bond_angstrom)
+    if key in ("BEH2", "BERYLLIUM DIHYDRIDE (BEH₂)"):
+        return build_beh2(bond_angstrom)
+    raise MoleculeBuilderError(f"Unsupported molecule name: {name!r}")

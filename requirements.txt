@@ -1,0 +1,10 @@
+qiskit==1.4.6
+qiskit-aer==0.17.2
+qiskit-nature==0.8.0
+qiskit-algorithms==0.4.0
+# pyscf>=2.4  # Optional: PySCF requires C compiler; MoleculeQ uses built-in STO-3G engine on Windows
+numpy>=2,<3
+matplotlib
+pylatexenc
+plotly
+streamlit
